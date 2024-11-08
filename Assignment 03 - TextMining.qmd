@@ -1,0 +1,151 @@
+---
+title: "Assignment 03 - Text Mining"
+format: html
+editor: visual
+author: Kessie SHEN
+embed-resources: true
+---
+
+## Text Mining
+
+```{r}
+## Tokenize the abstracts and count the number of each token.
+library(dplyr)
+library(tidytext)
+library(ggplot2)
+library(readr)
+data <- read_csv("/Users/ckkkkkkkj/Desktop/pubmed.csv")
+# Tokenize abstracts into words
+tokens <- data %>%
+  unnest_tokens(word, abstract)
+
+# Count word
+word_counts <- tokens %>%
+  count(word, sort = TRUE)
+print(word_counts)
+
+# Removing Stop Words
+tokens_clean <- tokens %>%
+  anti_join(stop_words, by = "word")
+
+# Count non-stop-word occurrences
+word_counts_clean <- tokens_clean %>%
+  count(word, sort = TRUE)
+
+print(word_counts_clean)
+# Stop Words are Dominant: These high frequencies are expected, but they don’t contribute much to understanding the unique content or themes in the abstracts
+# Removing stop words change what tokens appear as the most frequent,
+#the/of/and/in/to >>>>>>covid/19/patients/cancer/prostate
+top_tokens_per_term <- tokens_clean %>%
+  count(term, word, sort = TRUE) %>%
+  group_by(term) %>%
+  slice_max(n, n = 5) %>%
+  ungroup()
+
+print(top_tokens_per_term)
+```
+
+```{r}
+## Tokenize the abstracts into bigrams. Find the 10 most common bigrams and visualize them with ggplot2.
+
+bigrams <- data %>%
+  unnest_tokens(bigram, abstract, token = "ngrams", n = 2)
+
+
+bigram_counts <- bigrams %>%
+  count(bigram, sort = TRUE)
+
+
+top_bigrams <- bigram_counts %>%
+  slice_max(n, n = 10)
+
+# Visualize
+ggplot(top_bigrams, aes(x = reorder(bigram, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Top 10 Bigrams in Abstracts", x = "Bigram", y = "Frequency")
+## Calculate the TF-IDF value for each word-search term combination (here you want the search term to be the “document”). What are the 5 tokens from each search term with the highest TF-IDF value? How are the results different from the answers you got in question 1?
+## covid/19/patients/cancer/prostate  
+# >>>>>covid/cystic fibrosis/meningitis/preeclampsia/prostate cancer
+# Calculate term frequency for each word-search term combination
+term_word_counts <- tokens_clean %>%
+  count(term, word, sort = TRUE)
+
+# Calculate TF-IDF
+tf_idf <- term_word_counts %>%
+  bind_tf_idf(word, term, n) %>%
+  arrange(term, desc(tf_idf))
+
+# Top 5 TF-IDF tokens for each search term
+top_tf_idf <- tf_idf %>%
+  group_by(term) %>%
+  slice_max(tf_idf, n = 5) %>%
+  ungroup()
+
+print(top_tf_idf)
+
+```
+
+## Sentiment Analysis
+
+```{r}
+# Perform a sentiment analysis using the NRC lexicon. 
+# Load NRC
+library(textdata)
+nrc_sentiments <- get_sentiments("nrc")
+
+#perform sentiment analysis
+sentiment_counts <- data %>%
+  unnest_tokens(word, abstract) %>%                
+  inner_join(nrc_sentiments, by = "word") %>% 
+  count(term, sentiment, sort = TRUE)               
+
+# What is the most common sentiment for each search term?
+most_common_sentiment <- sentiment_counts %>%
+  group_by(term) %>%
+  slice_max(n, n = 1) %>%
+  ungroup()
+
+print(most_common_sentiment)
+# What if you remove "positive" and "negative" from the list?
+
+filtered_sentiments <- sentiment_counts %>%
+  filter(!sentiment %in% c("positive", "negative"))
+
+# Find the most common sentiment for each search term without positive/negative
+most_common_filtered <- filtered_sentiments %>%
+  group_by(term) %>%
+  slice_max(n, n = 1) %>%
+  ungroup()
+
+print(most_common_filtered)
+
+## Using the AFINN lexicon to get an average positivity score.
+# Load AFINN lexicon
+
+afinn <- get_sentiments("afinn")
+
+
+data <- data %>%
+  mutate(abstract_id = row_number())
+
+# Tokenize and calculate sentiment scores
+abstract_sentiment <- data %>%
+  unnest_tokens(word, abstract) %>%             
+  inner_join(afinn, by = "word") %>%             
+  group_by(abstract_id, term) %>%                
+  summarize(avg_score = mean(value, na.rm = TRUE)) %>%  
+  ungroup()
+
+# Visualize the scores by search term
+library(ggplot2)
+
+ggplot(abstract_sentiment, aes(x = term, y = avg_score, fill = term)) +
+  geom_boxplot() +
+  labs(title = "Average Positivity Score by Search Term",
+       x = "Search Term",
+       y = "Average Positivity Score") +
+  theme_minimal()
+```
+
+## "meningitis" has higher positivity scores. This could imply that recent research on meningitis may emphasize successful treatments, prevention strategies, or positive developments in managing the disease.
